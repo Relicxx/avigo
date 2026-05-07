@@ -1,0 +1,13 @@
+# AI tool artifacts
+CLAUDE.md
+AGENTS.md
+
+# env
+.env
+.env.*
+
+# binaries
+backend/bin/
+
+# Go
+*.exe
