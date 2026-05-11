@@ -16,6 +16,10 @@ type repo struct {
 	db *pgxpool.Pool
 }
 
+func NewRepository(db *pgxpool.Pool) Repository {
+	return &repo{db: db}
+}
+
 func (r *repo) Create(ctx context.Context, u *User) error {
 	query := `INSERT INTO users (email, password_hash)
 	VALUES ($1, $2)
@@ -45,8 +49,4 @@ func (r *repo) GetByEmail(ctx context.Context, email string) (*User, error) {
 	}
 
 	return user, nil
-}
-
-func NewRepository(db *pgxpool.Pool) Repository {
-	return &repo{db: db}
 }
