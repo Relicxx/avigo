@@ -2,18 +2,22 @@ package listing
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/Relicxx/avigo/internal/kafka"
+	"github.com/redis/go-redis/v9"
 )
 
 type Service struct {
 	repo     Repository
 	producer *kafka.Producer
+	redis    *redis.Client
 }
 
-func NewService(repo Repository, producer *kafka.Producer) *Service {
-	return &Service{repo: repo, producer: producer}
+func NewService(repo Repository, producer *kafka.Producer, redis *redis.Client) *Service {
+	return &Service{repo: repo, producer: producer, redis: redis}
 }
 
 func (s *Service) Create(ctx context.Context, l *Listing) error {
@@ -32,7 +36,24 @@ func (s *Service) GetByID(ctx context.Context, id int64) (*Listing, error) {
 }
 
 func (s *Service) List(ctx context.Context, category string, minPrice, maxPrice float64) ([]*Listing, error) {
-	return s.repo.List(ctx, category, minPrice, maxPrice)
+	cacheKey := fmt.Sprintf("listings:%s:%.2f:%.2f", category, minPrice, maxPrice)
+
+	cached, err := s.redis.Get(ctx, cacheKey).Result()
+	if err == nil {
+		var listings []*Listing
+		json.Unmarshal([]byte(cached), &listings)
+		return listings, nil
+	}
+
+	listings, err := s.repo.List(ctx, category, minPrice, maxPrice)
+	if err != nil {
+		return nil, err
+	}
+
+	data, _ := json.Marshal(listings)
+	s.redis.Set(ctx, cacheKey, data, 5*time.Minute)
+
+	return listings, nil
 }
 
 func (s *Service) Update(ctx context.Context, l *Listing) error {

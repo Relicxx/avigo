@@ -34,7 +34,8 @@ func main() {
 	authHandler := auth.NewHandler(authService)
 
 	listingRepo := listing.NewRepository(pool)
-	listingService := listing.NewService(listingRepo, producer)
+	redisClient := storage.NewRedis(cfg)
+	listingService := listing.NewService(listingRepo, producer, redisClient)
 	listingHandler := listing.NewHandler(listingService)
 
 	boostRepo := boost.NewRepository(pool)
