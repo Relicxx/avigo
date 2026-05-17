@@ -27,7 +27,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	userID := int64(1)
+	userID := c.GetInt64("user_id")
 	l := &Listing{
 		UserID:      userID,
 		Title:       req.Title,
@@ -113,9 +113,11 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
+	userID := c.GetInt64("user_id")
+
 	l := &Listing{
 		ID:          id,
-		UserID:      1,
+		UserID:      userID,
 		Title:       req.Title,
 		Description: req.Description,
 		Price:       req.Price,

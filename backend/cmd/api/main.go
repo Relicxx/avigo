@@ -8,6 +8,7 @@ import (
 	"github.com/Relicxx/avigo/internal/listing"
 	"github.com/Relicxx/avigo/internal/storage"
 	"github.com/Relicxx/avigo/internal/user"
+	"github.com/Relicxx/avigo/pkg/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -40,9 +41,12 @@ func main() {
 	listingHandler := listing.NewHandler(listingService)
 
 	listings := r.Group("/listings")
-	listings.POST("", listingHandler.Create)
 	listings.GET("", listingHandler.List)
 	listings.GET("/:id", listingHandler.GetByID)
-	listings.PUT("/:id", listingHandler.Update)
-	listings.DELETE("/:id", listingHandler.Delete)
+
+	protected := listings.Group("")
+	protected.Use(middleware.Auth("secret"))
+	protected.POST("", listingHandler.Create)
+	protected.PUT("/:id", listingHandler.Update)
+	protected.DELETE("/:id", listingHandler.Delete)
 }
