@@ -5,6 +5,7 @@ import (
 
 	"github.com/Relicxx/avigo/config"
 	"github.com/Relicxx/avigo/internal/auth"
+	"github.com/Relicxx/avigo/internal/listing"
 	"github.com/Relicxx/avigo/internal/storage"
 	"github.com/Relicxx/avigo/internal/user"
 	"github.com/gin-gonic/gin"
@@ -33,4 +34,15 @@ func main() {
 	r.POST("/auth/register", authHandler.Register)
 	r.POST("/auth/login", authHandler.Login)
 	r.Run(":" + cfg.AppPort)
+
+	listingRepo := listing.NewRepository(pool)
+	listingService := listing.NewService(listingRepo)
+	listingHandler := listing.NewHandler(listingService)
+
+	listings := r.Group("/listings")
+	listings.POST("", listingHandler.Create)
+	listings.GET("", listingHandler.List)
+	listings.GET("/:id", listingHandler.GetByID)
+	listings.PUT("/:id", listingHandler.Update)
+	listings.DELETE("/:id", listingHandler.Delete)
 }
