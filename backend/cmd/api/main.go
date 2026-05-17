@@ -6,6 +6,7 @@ import (
 	"github.com/Relicxx/avigo/config"
 	"github.com/Relicxx/avigo/internal/auth"
 	"github.com/Relicxx/avigo/internal/boost"
+	"github.com/Relicxx/avigo/internal/chat"
 	"github.com/Relicxx/avigo/internal/kafka"
 	"github.com/Relicxx/avigo/internal/listing"
 	"github.com/Relicxx/avigo/internal/storage"
@@ -56,6 +57,13 @@ func main() {
 	protected.PUT("/:id", listingHandler.Update)
 	protected.DELETE("/:id", listingHandler.Delete)
 	protected.POST("/:id/boost", boostHandler.Boost)
+
+	chatRepo := chat.NewRepository(pool)
+	chatService := chat.NewService(chatRepo)
+	chatHandler := chat.NewHandler(chatService)
+
+	protected.POST("/messages", chatHandler.Send)
+	r.GET("/listings/:id/messages", chatHandler.GetByListing)
 
 	log.Printf("starting on port %s", cfg.AppPort)
 	r.Run(":" + cfg.AppPort)
