@@ -5,6 +5,7 @@ import (
 
 	"github.com/Relicxx/avigo/config"
 	"github.com/Relicxx/avigo/internal/auth"
+	"github.com/Relicxx/avigo/internal/boost"
 	"github.com/Relicxx/avigo/internal/listing"
 	"github.com/Relicxx/avigo/internal/storage"
 	"github.com/Relicxx/avigo/internal/user"
@@ -49,4 +50,10 @@ func main() {
 	protected.POST("", listingHandler.Create)
 	protected.PUT("/:id", listingHandler.Update)
 	protected.DELETE("/:id", listingHandler.Delete)
+
+	boostRepo := boost.NewRepository(pool)
+	boostService := boost.NewService(boostRepo)
+	boostHandler := boost.NewHandler(boostService)
+
+	protected.POST("/listings/:id/boost", boostHandler.Boost)
 }
