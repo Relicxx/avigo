@@ -6,6 +6,7 @@ import (
 	"github.com/Relicxx/avigo/config"
 	"github.com/Relicxx/avigo/internal/auth"
 	"github.com/Relicxx/avigo/internal/boost"
+	"github.com/Relicxx/avigo/internal/kafka"
 	"github.com/Relicxx/avigo/internal/listing"
 	"github.com/Relicxx/avigo/internal/storage"
 	"github.com/Relicxx/avigo/internal/user"
@@ -25,21 +26,24 @@ func main() {
 	}
 	defer pool.Close()
 
-	log.Printf("db connected")
-	log.Printf("starting on port %s", cfg.AppPort)
+	producer := kafka.NewProducer(cfg.KafkaBrokers)
+	defer producer.Close()
 
 	userRepo := user.NewRepository(pool)
 	authService := auth.NewService(userRepo, "secret")
 	authHandler := auth.NewHandler(authService)
 
+	listingRepo := listing.NewRepository(pool)
+	listingService := listing.NewService(listingRepo, producer)
+	listingHandler := listing.NewHandler(listingService)
+
+	boostRepo := boost.NewRepository(pool)
+	boostService := boost.NewService(boostRepo, producer)
+	boostHandler := boost.NewHandler(boostService)
+
 	r := gin.Default()
 	r.POST("/auth/register", authHandler.Register)
 	r.POST("/auth/login", authHandler.Login)
-	r.Run(":" + cfg.AppPort)
-
-	listingRepo := listing.NewRepository(pool)
-	listingService := listing.NewService(listingRepo)
-	listingHandler := listing.NewHandler(listingService)
 
 	listings := r.Group("/listings")
 	listings.GET("", listingHandler.List)
@@ -50,10 +54,8 @@ func main() {
 	protected.POST("", listingHandler.Create)
 	protected.PUT("/:id", listingHandler.Update)
 	protected.DELETE("/:id", listingHandler.Delete)
+	protected.POST("/:id/boost", boostHandler.Boost)
 
-	boostRepo := boost.NewRepository(pool)
-	boostService := boost.NewService(boostRepo)
-	boostHandler := boost.NewHandler(boostService)
-
-	protected.POST("/listings/:id/boost", boostHandler.Boost)
+	log.Printf("starting on port %s", cfg.AppPort)
+	r.Run(":" + cfg.AppPort)
 }
