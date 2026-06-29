@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,6 +10,20 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
+
+const (
+	accessTokenTTL  = 15 * time.Minute
+	refreshTokenTTL = 7 * 24 * time.Hour
+)
+
+// ErrInvalidToken возвращается при невалидном или просроченном refresh-токене.
+var ErrInvalidToken = errors.New("invalid refresh token")
+
+// Tokens — пара токенов, выдаваемая при логине и обновлении.
+type Tokens struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+}
 
 type Service struct {
 	repo      user.Repository
@@ -19,14 +34,28 @@ func NewService(repo user.Repository, jwtSecret string) *Service {
 	return &Service{repo: repo, jwtSecret: jwtSecret}
 }
 
-func (s *Service) generateToken(userID int64) (string, error) {
+func (s *Service) generateToken(userID int64, tokenType string, ttl time.Duration) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
-		"exp":     time.Now().Add(24 * time.Hour).Unix(),
+		"type":    tokenType,
+		"exp":     time.Now().Add(ttl).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 	return token.SignedString([]byte(s.jwtSecret))
+}
+
+func (s *Service) generateTokens(userID int64) (*Tokens, error) {
+	access, err := s.generateToken(userID, "access", accessTokenTTL)
+	if err != nil {
+		return nil, err
+	}
+	refresh, err := s.generateToken(userID, "refresh", refreshTokenTTL)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Tokens{AccessToken: access, RefreshToken: refresh}, nil
 }
 
 func (s *Service) Register(ctx context.Context, email, password string) (*user.User, error) {
@@ -43,15 +72,40 @@ func (s *Service) Register(ctx context.Context, email, password string) (*user.U
 	return &u, nil
 }
 
-func (s *Service) Login(ctx context.Context, email, password string) (string, error) {
+func (s *Service) Login(ctx context.Context, email, password string) (*Tokens, error) {
 	u, err := s.repo.GetByEmail(ctx, email)
 	if err != nil {
-		return "", fmt.Errorf("error fetching user: %w", err)
+		return nil, fmt.Errorf("error fetching user: %w", err)
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
-		return "", fmt.Errorf("invalid credentials: %w", err)
+		return nil, fmt.Errorf("invalid credentials: %w", err)
 	}
 
-	return s.generateToken(u.ID)
+	return s.generateTokens(u.ID)
+}
+
+// Refresh проверяет refresh-токен и выдаёт новую пару токенов.
+func (s *Service) Refresh(refreshToken string) (*Tokens, error) {
+	token, err := jwt.Parse(refreshToken, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, ErrInvalidToken
+		}
+		return []byte(s.jwtSecret), nil
+	})
+	if err != nil || !token.Valid {
+		return nil, ErrInvalidToken
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || claims["type"] != "refresh" {
+		return nil, ErrInvalidToken
+	}
+
+	uid, ok := claims["user_id"].(float64)
+	if !ok {
+		return nil, ErrInvalidToken
+	}
+
+	return s.generateTokens(int64(uid))
 }

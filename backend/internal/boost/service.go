@@ -2,10 +2,14 @@ package boost
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Relicxx/avigo/internal/kafka"
 )
+
+// ErrNotOwner возвращается при попытке поднять чужое объявление.
+var ErrNotOwner = errors.New("listing does not belong to user")
 
 type Service struct {
 	repo     Repository
@@ -17,6 +21,14 @@ func NewService(repo Repository, producer *kafka.Producer) *Service {
 }
 
 func (s *Service) Boost(ctx context.Context, listingID, userID int64) (*Boost, error) {
+	ownerID, err := s.repo.ListingOwner(ctx, listingID)
+	if err != nil {
+		return nil, err
+	}
+	if ownerID != userID {
+		return nil, ErrNotOwner
+	}
+
 	b := &Boost{ListingID: listingID, UserID: userID}
 	if err := s.repo.Create(ctx, b); err != nil {
 		return nil, err

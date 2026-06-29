@@ -31,7 +31,7 @@ func main() {
 	defer producer.Close()
 
 	userRepo := user.NewRepository(pool)
-	authService := auth.NewService(userRepo, "secret")
+	authService := auth.NewService(userRepo, cfg.JWTSecret)
 	authHandler := auth.NewHandler(authService)
 
 	listingRepo := listing.NewRepository(pool)
@@ -46,13 +46,14 @@ func main() {
 	r := gin.Default()
 	r.POST("/auth/register", authHandler.Register)
 	r.POST("/auth/login", authHandler.Login)
+	r.POST("/auth/refresh", authHandler.Refresh)
 
 	listings := r.Group("/listings")
 	listings.GET("", listingHandler.List)
 	listings.GET("/:id", listingHandler.GetByID)
 
 	protected := listings.Group("")
-	protected.Use(middleware.Auth("secret"))
+	protected.Use(middleware.Auth(cfg.JWTSecret))
 	protected.POST("", listingHandler.Create)
 	protected.PUT("/:id", listingHandler.Update)
 	protected.DELETE("/:id", listingHandler.Delete)

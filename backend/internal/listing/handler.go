@@ -1,6 +1,7 @@
 package listing
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -141,7 +142,12 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 
-	err = h.service.Delete(c.Request.Context(), id)
+	userID := c.GetInt64("user_id")
+	err = h.service.Delete(c.Request.Context(), id, userID)
+	if errors.Is(err, ErrNotFound) {
+		c.JSON(404, gin.H{"error": "Listing not found"})
+		return
+	}
 	if err != nil {
 		c.JSON(500, gin.H{"error": "Failed to delete listing"})
 		return

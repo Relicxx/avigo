@@ -2,17 +2,21 @@ package listing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// ErrNotFound возвращается, когда объявление не найдено или не принадлежит пользователю.
+var ErrNotFound = errors.New("listing not found")
 
 type Repository interface {
 	Create(ctx context.Context, l *Listing) error
 	GetByID(ctx context.Context, id int64) (*Listing, error)
 	List(ctx context.Context, category string, minPrice, maxPrice float64) ([]*Listing, error)
 	Update(ctx context.Context, l *Listing) error
-	Delete(ctx context.Context, id int64) error
+	Delete(ctx context.Context, id, userID int64) error
 }
 
 type repo struct {
@@ -127,12 +131,15 @@ func (r *repo) Update(ctx context.Context, l *Listing) error {
 	return nil
 }
 
-func (r *repo) Delete(ctx context.Context, id int64) error {
-	query := `DELETE FROM listings WHERE id = $1`
+func (r *repo) Delete(ctx context.Context, id, userID int64) error {
+	query := `DELETE FROM listings WHERE id = $1 AND user_id = $2`
 
-	_, err := r.db.Exec(ctx, query, id)
+	tag, err := r.db.Exec(ctx, query, id, userID)
 	if err != nil {
 		return fmt.Errorf("delete listing: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
 	}
 
 	return nil

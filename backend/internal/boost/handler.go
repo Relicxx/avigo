@@ -1,6 +1,7 @@
 package boost
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +21,10 @@ func (h *Handler) Boost(c *gin.Context) {
 
 	userID := c.GetInt64("user_id")
 	boost, err := h.service.Boost(c.Request.Context(), id, userID)
+	if errors.Is(err, ErrNotOwner) {
+		c.JSON(403, gin.H{"error": "You can boost only your own listing"})
+		return
+	}
 	if err != nil {
 		c.JSON(500, gin.H{"error": "Failed to boost listing"})
 		return

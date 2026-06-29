@@ -11,6 +11,7 @@ type Config struct {
 	PostgresDSN  string
 	RedisAddr    string
 	KafkaBrokers string
+	JWTSecret    string
 }
 
 func Load() (*Config, error) {
@@ -21,6 +22,11 @@ func Load() (*Config, error) {
 		PostgresDSN:  os.Getenv("POSTGRES_DSN"),
 		RedisAddr:    os.Getenv("REDIS_ADDR"),
 		KafkaBrokers: os.Getenv("KAFKA_BROKERS"),
+		JWTSecret:    os.Getenv("JWT_SECRET"),
+	}
+
+	if cfg.JWTSecret == "" {
+		cfg.JWTSecret = "dev-secret-change-me"
 	}
 
 	if cfg.AppPort == "" {

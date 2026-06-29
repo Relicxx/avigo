@@ -11,6 +11,7 @@ import (
 type Repository interface {
 	Create(ctx context.Context, b *Boost) error
 	GetActiveByListingID(ctx context.Context, listingID int64) (*Boost, error)
+	ListingOwner(ctx context.Context, listingID int64) (int64, error)
 }
 
 type repo struct {
@@ -37,6 +38,18 @@ func (r *repo) Create(ctx context.Context, b *Boost) error {
 	}
 
 	return nil
+}
+
+// ListingOwner возвращает user_id владельца объявления.
+func (r *repo) ListingOwner(ctx context.Context, listingID int64) (int64, error) {
+	query := `SELECT user_id FROM listings WHERE id = $1`
+
+	var ownerID int64
+	if err := r.db.QueryRow(ctx, query, listingID).Scan(&ownerID); err != nil {
+		return 0, fmt.Errorf("get listing owner: %w", err)
+	}
+
+	return ownerID, nil
 }
 
 func (r *repo) GetActiveByListingID(ctx context.Context, listingID int64) (*Boost, error) {

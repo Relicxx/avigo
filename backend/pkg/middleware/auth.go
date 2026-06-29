@@ -33,8 +33,16 @@ func Auth(jwtSecret string) gin.HandlerFunc {
 			c.AbortWithStatusJSON(401, gin.H{"error": "invalid claims"})
 			return
 		}
-		userID := int64(claims["user_id"].(float64))
-		c.Set("user_id", userID)
+		if claims["type"] != "access" {
+			c.AbortWithStatusJSON(401, gin.H{"error": "invalid token type"})
+			return
+		}
+		uid, ok := claims["user_id"].(float64)
+		if !ok {
+			c.AbortWithStatusJSON(401, gin.H{"error": "invalid claims"})
+			return
+		}
+		c.Set("user_id", int64(uid))
 		c.Next()
 	}
 }

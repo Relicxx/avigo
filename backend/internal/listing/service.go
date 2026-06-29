@@ -41,8 +41,9 @@ func (s *Service) List(ctx context.Context, category string, minPrice, maxPrice 
 	cached, err := s.redis.Get(ctx, cacheKey).Result()
 	if err == nil {
 		var listings []*Listing
-		json.Unmarshal([]byte(cached), &listings)
-		return listings, nil
+		if err := json.Unmarshal([]byte(cached), &listings); err == nil {
+			return listings, nil
+		}
 	}
 
 	listings, err := s.repo.List(ctx, category, minPrice, maxPrice)
@@ -57,9 +58,27 @@ func (s *Service) List(ctx context.Context, category string, minPrice, maxPrice 
 }
 
 func (s *Service) Update(ctx context.Context, l *Listing) error {
-	return s.repo.Update(ctx, l)
+	if err := s.repo.Update(ctx, l); err != nil {
+		return err
+	}
+	s.invalidateListCache(ctx)
+	return nil
 }
 
-func (s *Service) Delete(ctx context.Context, id int64) error {
-	return s.repo.Delete(ctx, id)
+func (s *Service) Delete(ctx context.Context, id, userID int64) error {
+	if err := s.repo.Delete(ctx, id, userID); err != nil {
+		return err
+	}
+	s.invalidateListCache(ctx)
+	return nil
+}
+
+// invalidateListCache сбрасывает закешированные листинги после изменения данных,
+// чтобы клиенты не получали устаревший cache-aside результат.
+func (s *Service) invalidateListCache(ctx context.Context) {
+	keys, err := s.redis.Keys(ctx, "listings:*").Result()
+	if err != nil || len(keys) == 0 {
+		return
+	}
+	s.redis.Del(ctx, keys...)
 }
