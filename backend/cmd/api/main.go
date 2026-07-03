@@ -18,7 +18,7 @@ import (
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		panic(err)
+		log.Fatalf("failed to load config: %v", err)
 	}
 
 	pool, err := storage.NewPostgres(cfg)

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -26,7 +27,7 @@ func Load() (*Config, error) {
 	}
 
 	if cfg.JWTSecret == "" {
-		cfg.JWTSecret = "dev-secret-change-me"
+		return nil, errors.New("JWT_SECRET is not set: refusing to start without a signing secret")
 	}
 
 	if cfg.AppPort == "" {
