@@ -1,9 +1,9 @@
 package listing
 
 import (
-	"errors"
 	"strconv"
 
+	"github.com/Relicxx/avigo/pkg/httpx"
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,7 +38,7 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 	err := h.service.Create(c.Request.Context(), l)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "Failed to create listing"})
+		httpx.Error(c, err)
 		return
 	}
 
@@ -55,7 +55,7 @@ func (h *Handler) GetByID(c *gin.Context) {
 
 	l, err := h.service.GetByID(c.Request.Context(), id)
 	if err != nil {
-		c.JSON(404, gin.H{"error": "Listing not found"})
+		httpx.Error(c, err)
 		return
 	}
 
@@ -87,7 +87,7 @@ func (h *Handler) List(c *gin.Context) {
 
 	ls, err := h.service.List(c.Request.Context(), category, minPrice, maxPrice)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "Failed to list listings"})
+		httpx.Error(c, err)
 		return
 	}
 
@@ -127,7 +127,7 @@ func (h *Handler) Update(c *gin.Context) {
 
 	err = h.service.Update(c.Request.Context(), l)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "Failed to update listing"})
+		httpx.Error(c, err)
 		return
 	}
 
@@ -144,12 +144,8 @@ func (h *Handler) Delete(c *gin.Context) {
 
 	userID := c.GetInt64("user_id")
 	err = h.service.Delete(c.Request.Context(), id, userID)
-	if errors.Is(err, ErrNotFound) {
-		c.JSON(404, gin.H{"error": "Listing not found"})
-		return
-	}
 	if err != nil {
-		c.JSON(500, gin.H{"error": "Failed to delete listing"})
+		httpx.Error(c, err)
 		return
 	}
 

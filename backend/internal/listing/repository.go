@@ -2,14 +2,12 @@ package listing
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
+	"github.com/Relicxx/avigo/internal/apperr"
+	"github.com/Relicxx/avigo/internal/storage"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// ErrNotFound возвращается, когда объявление не найдено или не принадлежит пользователю.
-var ErrNotFound = errors.New("listing not found")
 
 type Repository interface {
 	Create(ctx context.Context, l *Listing) error
@@ -64,7 +62,7 @@ func (r *repo) GetByID(ctx context.Context, id int64) (*Listing, error) {
 		&l.CreatedAt,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("get listing by ID: %w", err)
+		return nil, storage.MapError("get listing by ID", err)
 	}
 
 	return l, nil
@@ -123,9 +121,12 @@ func (r *repo) Update(ctx context.Context, l *Listing) error {
 	SET title = $1, description = $2, price = $3, category = $4
 	WHERE id = $5 AND user_id = $6`
 
-	_, err := r.db.Exec(ctx, query, l.Title, l.Description, l.Price, l.Category, l.ID, l.UserID)
+	tag, err := r.db.Exec(ctx, query, l.Title, l.Description, l.Price, l.Category, l.ID, l.UserID)
 	if err != nil {
 		return fmt.Errorf("update listing: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperr.ErrNotFound
 	}
 
 	return nil
@@ -139,7 +140,7 @@ func (r *repo) Delete(ctx context.Context, id, userID int64) error {
 		return fmt.Errorf("delete listing: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrNotFound
+		return apperr.ErrNotFound
 	}
 
 	return nil

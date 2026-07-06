@@ -2,8 +2,8 @@ package user
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/Relicxx/avigo/internal/storage"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -27,7 +27,7 @@ func (r *repo) Create(ctx context.Context, u *User) error {
 
 	err := r.db.QueryRow(ctx, query, u.Email, u.PasswordHash).Scan(&u.ID, &u.CreatedAt)
 	if err != nil {
-		return fmt.Errorf("create user: %w", err)
+		return storage.MapError("create user", err)
 	}
 
 	return nil
@@ -45,7 +45,7 @@ func (r *repo) GetByEmail(ctx context.Context, email string) (*User, error) {
 		email,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("get user by email: %w", err)
+		return nil, storage.MapError("get user by email", err)
 	}
 
 	return user, nil

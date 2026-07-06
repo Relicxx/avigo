@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Relicxx/avigo/internal/storage"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -46,7 +47,7 @@ func (r *repo) ListingOwner(ctx context.Context, listingID int64) (int64, error)
 
 	var ownerID int64
 	if err := r.db.QueryRow(ctx, query, listingID).Scan(&ownerID); err != nil {
-		return 0, fmt.Errorf("get listing owner: %w", err)
+		return 0, storage.MapError("get listing owner", err)
 	}
 
 	return ownerID, nil

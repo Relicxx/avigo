@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Relicxx/avigo/internal/apperr"
 	"github.com/Relicxx/avigo/internal/user"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -75,11 +76,15 @@ func (s *Service) Register(ctx context.Context, email, password string) (*user.U
 func (s *Service) Login(ctx context.Context, email, password string) (*Tokens, error) {
 	u, err := s.repo.GetByEmail(ctx, email)
 	if err != nil {
+		if errors.Is(err, apperr.ErrNotFound) {
+			// Не раскрываем, существует ли email.
+			return nil, apperr.ErrUnauthorized
+		}
 		return nil, fmt.Errorf("error fetching user: %w", err)
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
-		return nil, fmt.Errorf("invalid credentials: %w", err)
+		return nil, apperr.ErrUnauthorized
 	}
 
 	return s.generateTokens(u.ID)
