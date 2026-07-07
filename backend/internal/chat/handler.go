@@ -3,7 +3,13 @@ package chat
 import (
 	"strconv"
 
+	"github.com/Relicxx/avigo/pkg/httpx"
 	"github.com/gin-gonic/gin"
+)
+
+const (
+	defaultMessagesLimit = 50
+	maxMessagesLimit     = 200
 )
 
 type Handler struct {
@@ -16,18 +22,20 @@ func NewHandler(s *Service) *Handler {
 
 func (h *Handler) Send(c *gin.Context) {
 	var req struct {
-		ListingID  int64  `json:"listing_id"`
+		ListingID int64 `json:"listing_id" binding:"required"`
+		// ReceiverID учитывается только когда отправитель — владелец объявления.
 		ReceiverID int64  `json:"receiver_id"`
-		Body       string `json:"body"`
+		Body       string `json:"body" binding:"required,max=2000"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": "invalid request"})
 		return
 	}
+
 	senderID := c.GetInt64("user_id")
-	m := &Message{ListingID: req.ListingID, SenderID: senderID, ReceiverID: req.ReceiverID, Body: req.Body}
-	if err := h.service.Send(c.Request.Context(), m); err != nil {
-		c.JSON(500, gin.H{"error": "failed to send"})
+	m, err := h.service.Send(c.Request.Context(), senderID, req.ListingID, req.ReceiverID, req.Body)
+	if err != nil {
+		httpx.Error(c, err)
 		return
 	}
 	c.JSON(201, m)
@@ -40,9 +48,17 @@ func (h *Handler) GetByListing(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "invalid id"})
 		return
 	}
-	msgs, err := h.service.GetByListing(c.Request.Context(), id)
+
+	limit, offset, err := httpx.Pagination(c, defaultMessagesLimit, maxMessagesLimit)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "failed to get messages"})
+		httpx.Error(c, err)
+		return
+	}
+
+	userID := c.GetInt64("user_id")
+	msgs, err := h.service.GetForUser(c.Request.Context(), id, userID, limit, offset)
+	if err != nil {
+		httpx.Error(c, err)
 		return
 	}
 	c.JSON(200, msgs)

@@ -63,8 +63,12 @@ func main() {
 	chatService := chat.NewService(chatRepo)
 	chatHandler := chat.NewHandler(chatService)
 
-	protected.POST("/messages", chatHandler.Send)
-	r.GET("/listings/:id/messages", chatHandler.GetByListing)
+	// Чат доступен только аутентифицированным пользователям:
+	// историю видят лишь участники переписки.
+	messages := r.Group("")
+	messages.Use(middleware.Auth(cfg.JWTSecret))
+	messages.POST("/messages", chatHandler.Send)
+	messages.GET("/listings/:id/messages", chatHandler.GetByListing)
 
 	log.Printf("starting on port %s", cfg.AppPort)
 	r.Run(":" + cfg.AppPort)
