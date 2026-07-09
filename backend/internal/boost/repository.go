@@ -3,15 +3,17 @@ package boost
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/Relicxx/avigo/internal/storage"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Repository interface {
-	Create(ctx context.Context, b *Boost) error
-	GetActiveByListingID(ctx context.Context, listingID int64) (*Boost, error)
+	// CreateActive в одной транзакции проверяет, что активного буста нет,
+	// создаёт новый и выставляет listings.is_boosted = true.
+	// При активном бусте возвращает ErrAlreadyBoosted.
+	CreateActive(ctx context.Context, b *Boost) error
+	// ListingOwner возвращает user_id владельца объявления.
 	ListingOwner(ctx context.Context, listingID int64) (int64, error)
 }
 
@@ -25,17 +27,44 @@ func NewRepository(db *pgxpool.Pool) Repository {
 	}
 }
 
-func (r *repo) Create(ctx context.Context, b *Boost) error {
-	query := `INSERT INTO boosts (listing_id, user_id,expires_at)
-	VALUES ($1, $2, $3)
-	RETURNING id, created_at`
-
-	b.ExpiresAt = time.Now().Add(24 * time.Hour)
-	row := r.db.QueryRow(ctx, query, b.ListingID, b.UserID, b.ExpiresAt)
-
-	err := row.Scan(&b.ID, &b.CreatedAt)
+func (r *repo) CreateActive(ctx context.Context, b *Boost) error {
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("create boost: %w", err)
+		return fmt.Errorf("begin boost tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback после commit — no-op
+
+	var hasActive bool
+	err = tx.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM boosts WHERE listing_id = $1 AND expires_at > NOW())`,
+		b.ListingID,
+	).Scan(&hasActive)
+	if err != nil {
+		return fmt.Errorf("check active boost: %w", err)
+	}
+	if hasActive {
+		return ErrAlreadyBoosted
+	}
+
+	err = tx.QueryRow(ctx,
+		`INSERT INTO boosts (listing_id, user_id, expires_at)
+		VALUES ($1, $2, $3)
+		RETURNING id, created_at`,
+		b.ListingID, b.UserID, b.ExpiresAt,
+	).Scan(&b.ID, &b.CreatedAt)
+	if err != nil {
+		return storage.MapError("create boost", err)
+	}
+
+	if _, err := tx.Exec(ctx,
+		`UPDATE listings SET is_boosted = TRUE WHERE id = $1`,
+		b.ListingID,
+	); err != nil {
+		return fmt.Errorf("mark listing boosted: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit boost tx: %w", err)
 	}
 
 	return nil
@@ -51,21 +80,4 @@ func (r *repo) ListingOwner(ctx context.Context, listingID int64) (int64, error)
 	}
 
 	return ownerID, nil
-}
-
-func (r *repo) GetActiveByListingID(ctx context.Context, listingID int64) (*Boost, error) {
-	query := `SELECT id, listing_id, user_id, expires_at, created_at
-	FROM boosts
-	WHERE listing_id = $1 AND expires_at > NOW()
-	ORDER BY created_at DESC
-	LIMIT 1`
-
-	row := r.db.QueryRow(ctx, query, listingID)
-	b := &Boost{}
-	err := row.Scan(&b.ID, &b.ListingID, &b.UserID, &b.ExpiresAt, &b.CreatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("get active boost: %w", err)
-	}
-
-	return b, nil
 }

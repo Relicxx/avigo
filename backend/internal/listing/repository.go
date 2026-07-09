@@ -73,12 +73,16 @@ func (r *repo) List(
 	category string, minPrice,
 	maxPrice float64,
 ) ([]*Listing, error) {
-	query := `SELECT id, user_id, title, description, price, category, is_boosted, created_at
-	FROM listings
-	WHERE ($1 = '' OR category = $1)
-		AND ($2 = 0 OR price >= $2)
-		AND ($3 = 0 OR price <= $3)
-	ORDER BY created_at DESC`
+	query := `SELECT l.id, l.user_id, l.title, l.description, l.price, l.category, l.is_boosted, l.created_at
+	FROM listings l
+	WHERE ($1 = '' OR l.category = $1)
+		AND ($2 = 0 OR l.price >= $2)
+		AND ($3 = 0 OR l.price <= $3)
+	ORDER BY (l.is_boosted AND EXISTS (
+			SELECT 1 FROM boosts b
+			WHERE b.listing_id = l.id AND b.expires_at > NOW()
+		)) DESC,
+		l.created_at DESC`
 
 	rows, err := r.db.Query(ctx, query, category, minPrice, maxPrice)
 	if err != nil {

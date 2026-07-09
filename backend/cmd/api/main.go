@@ -42,7 +42,7 @@ func main() {
 	listingHandler := listing.NewHandler(listingService)
 
 	boostRepo := boost.NewRepository(pool)
-	boostService := boost.NewService(boostRepo, producer)
+	boostService := boost.NewService(boostRepo, producer, cfg.BoostDuration)
 	boostHandler := boost.NewHandler(boostService)
 
 	r := gin.Default()

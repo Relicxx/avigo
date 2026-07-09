@@ -26,6 +26,10 @@ func (h *Handler) Boost(c *gin.Context) {
 		c.JSON(403, gin.H{"error": "You can boost only your own listing"})
 		return
 	}
+	if errors.Is(err, ErrAlreadyBoosted) {
+		c.JSON(409, gin.H{"error": "Listing already has an active boost"})
+		return
+	}
 	if err != nil {
 		httpx.Error(c, err)
 		return

@@ -2,17 +2,20 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	AppPort      string
-	PostgresDSN  string
-	RedisAddr    string
-	KafkaBrokers string
-	JWTSecret    string
+	AppPort       string
+	PostgresDSN   string
+	RedisAddr     string
+	KafkaBrokers  string
+	JWTSecret     string
+	BoostDuration time.Duration
 }
 
 func Load() (*Config, error) {
@@ -44,6 +47,15 @@ func Load() (*Config, error) {
 
 	if cfg.KafkaBrokers == "" {
 		cfg.KafkaBrokers = "localhost:9092"
+	}
+
+	cfg.BoostDuration = 24 * time.Hour
+	if raw := os.Getenv("BOOST_DURATION"); raw != "" {
+		d, err := time.ParseDuration(raw)
+		if err != nil || d <= 0 {
+			return nil, fmt.Errorf("invalid BOOST_DURATION %q: expected positive Go duration, e.g. 24h", raw)
+		}
+		cfg.BoostDuration = d
 	}
 
 	return cfg, nil
