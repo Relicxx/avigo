@@ -75,11 +75,37 @@ func (h *Handler) Refresh(c *gin.Context) {
 		return
 	}
 
-	tokens, err := h.service.Refresh(req.RefreshToken)
+	tokens, err := h.service.Refresh(c.Request.Context(), req.RefreshToken)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh token"})
+		if errors.Is(err, apperr.ErrUnauthorized) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh token"})
+			return
+		}
+		httpx.Error(c, err)
 		return
 	}
 
 	c.JSON(http.StatusOK, tokens)
+}
+
+func (h *Handler) Logout(c *gin.Context) {
+	var req struct {
+		RefreshToken string `json:"refresh_token" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	if err := h.service.Logout(c.Request.Context(), req.RefreshToken); err != nil {
+		if errors.Is(err, apperr.ErrUnauthorized) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh token"})
+			return
+		}
+		httpx.Error(c, err)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
 }

@@ -30,12 +30,14 @@ func main() {
 	producer := kafka.NewProducer(cfg.KafkaBrokers)
 	defer producer.Close()
 
+	redisClient := storage.NewRedis(cfg)
+
 	userRepo := user.NewRepository(pool)
-	authService := auth.NewService(userRepo, cfg.JWTSecret)
+	tokenStore := auth.NewRedisTokenStore(redisClient)
+	authService := auth.NewService(userRepo, tokenStore, cfg.JWTSecret)
 	authHandler := auth.NewHandler(authService)
 
 	listingRepo := listing.NewRepository(pool)
-	redisClient := storage.NewRedis(cfg)
 	listingService := listing.NewService(listingRepo, producer, redisClient)
 	listingHandler := listing.NewHandler(listingService)
 
@@ -47,6 +49,7 @@ func main() {
 	r.POST("/auth/register", authHandler.Register)
 	r.POST("/auth/login", authHandler.Login)
 	r.POST("/auth/refresh", authHandler.Refresh)
+	r.POST("/auth/logout", authHandler.Logout)
 
 	listings := r.Group("/listings")
 	listings.GET("", listingHandler.List)
