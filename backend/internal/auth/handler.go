@@ -19,8 +19,8 @@ func NewHandler(service *Service) *Handler {
 
 func (h *Handler) Register(c *gin.Context) {
 	var req struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email    string `json:"email" binding:"required,email,max=255"`
+		Password string `json:"password" binding:"required,min=8,max=72"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -43,8 +43,8 @@ func (h *Handler) Register(c *gin.Context) {
 
 func (h *Handler) Login(c *gin.Context) {
 	var req struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email    string `json:"email" binding:"required,email"`
+		Password string `json:"password" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -67,7 +67,7 @@ func (h *Handler) Login(c *gin.Context) {
 
 func (h *Handler) Refresh(c *gin.Context) {
 	var req struct {
-		RefreshToken string `json:"refresh_token"`
+		RefreshToken string `json:"refresh_token" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {

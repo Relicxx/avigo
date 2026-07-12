@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Relicxx/avigo/internal/kafka"
@@ -35,8 +36,16 @@ func (s *Service) GetByID(ctx context.Context, id int64) (*Listing, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
-func (s *Service) List(ctx context.Context, category string, minPrice, maxPrice float64) ([]*Listing, error) {
-	cacheKey := fmt.Sprintf("listings:%s:%.2f:%.2f", category, minPrice, maxPrice)
+func fmtPrice(p *float64) string {
+	if p == nil {
+		return "-"
+	}
+	return strconv.FormatFloat(*p, 'f', 2, 64)
+}
+
+func (s *Service) List(ctx context.Context, f Filter) ([]*Listing, error) {
+	cacheKey := fmt.Sprintf("listings:%s:%s:%s:%d:%d",
+		f.Category, fmtPrice(f.MinPrice), fmtPrice(f.MaxPrice), f.Limit, f.Offset)
 
 	cached, err := s.redis.Get(ctx, cacheKey).Result()
 	if err == nil {
@@ -46,7 +55,7 @@ func (s *Service) List(ctx context.Context, category string, minPrice, maxPrice 
 		}
 	}
 
-	listings, err := s.repo.List(ctx, category, minPrice, maxPrice)
+	listings, err := s.repo.List(ctx, f)
 	if err != nil {
 		return nil, err
 	}

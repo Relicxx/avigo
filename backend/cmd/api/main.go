@@ -46,6 +46,8 @@ func main() {
 	boostHandler := boost.NewHandler(boostService)
 
 	r := gin.Default()
+	r.Use(middleware.BodyLimit(1 << 20)) // 1 MiB
+
 	r.POST("/auth/register", authHandler.Register)
 	r.POST("/auth/login", authHandler.Login)
 	r.POST("/auth/refresh", authHandler.Refresh)

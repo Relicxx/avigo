@@ -9,10 +9,20 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Filter — параметры выборки объявлений. Nil-цены означают отсутствие фильтра
+// (в отличие от «0 = нет фильтра», ноль — валидная цена).
+type Filter struct {
+	Category string
+	MinPrice *float64
+	MaxPrice *float64
+	Limit    int
+	Offset   int
+}
+
 type Repository interface {
 	Create(ctx context.Context, l *Listing) error
 	GetByID(ctx context.Context, id int64) (*Listing, error)
-	List(ctx context.Context, category string, minPrice, maxPrice float64) ([]*Listing, error)
+	List(ctx context.Context, f Filter) ([]*Listing, error)
 	Update(ctx context.Context, l *Listing) error
 	Delete(ctx context.Context, id, userID int64) error
 }
@@ -68,23 +78,20 @@ func (r *repo) GetByID(ctx context.Context, id int64) (*Listing, error) {
 	return l, nil
 }
 
-func (r *repo) List(
-	ctx context.Context,
-	category string, minPrice,
-	maxPrice float64,
-) ([]*Listing, error) {
+func (r *repo) List(ctx context.Context, f Filter) ([]*Listing, error) {
 	query := `SELECT l.id, l.user_id, l.title, l.description, l.price, l.category, l.is_boosted, l.created_at
 	FROM listings l
 	WHERE ($1 = '' OR l.category = $1)
-		AND ($2 = 0 OR l.price >= $2)
-		AND ($3 = 0 OR l.price <= $3)
+		AND ($2::numeric IS NULL OR l.price >= $2)
+		AND ($3::numeric IS NULL OR l.price <= $3)
 	ORDER BY (l.is_boosted AND EXISTS (
 			SELECT 1 FROM boosts b
 			WHERE b.listing_id = l.id AND b.expires_at > NOW()
 		)) DESC,
-		l.created_at DESC`
+		l.created_at DESC
+	LIMIT $4 OFFSET $5`
 
-	rows, err := r.db.Query(ctx, query, category, minPrice, maxPrice)
+	rows, err := r.db.Query(ctx, query, f.Category, f.MinPrice, f.MaxPrice, f.Limit, f.Offset)
 	if err != nil {
 		return nil, fmt.Errorf("list listings: %w", err)
 	}

@@ -15,13 +15,17 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
+// createUpdateRequest — тело Create/Update. Максимальные длины соответствуют
+// схеме БД: title VARCHAR(255), category VARCHAR(100).
+type createUpdateRequest struct {
+	Title       string  `json:"title" binding:"required,min=1,max=255"`
+	Description string  `json:"description" binding:"max=5000"`
+	Price       float64 `json:"price" binding:"gte=0,lt=100000000"`
+	Category    string  `json:"category" binding:"max=100"`
+}
+
 func (h *Handler) Create(c *gin.Context) {
-	var req struct {
-		Title       string  `json:"title"`
-		Description string  `json:"description"`
-		Price       float64 `json:"price"`
-		Category    string  `json:"category"`
-	}
+	var req createUpdateRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": "Invalid request"})
@@ -62,30 +66,44 @@ func (h *Handler) GetByID(c *gin.Context) {
 	c.JSON(200, l)
 }
 
+const (
+	defaultListingsLimit = 20
+	maxListingsLimit     = 100
+)
+
+// parseOptionalPrice различает «фильтр не задан» (nil) и «фильтр по 0».
+func parseOptionalPrice(raw string) (*float64, bool) {
+	if raw == "" {
+		return nil, true
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil || v < 0 {
+		return nil, false
+	}
+	return &v, true
+}
+
 func (h *Handler) List(c *gin.Context) {
-	category := c.Query("category")
-	minPriceStr := c.Query("min_price")
-	maxPriceStr := c.Query("max_price")
-	var minPrice, maxPrice float64
+	f := Filter{Category: c.Query("category")}
+
+	var ok bool
+	if f.MinPrice, ok = parseOptionalPrice(c.Query("min_price")); !ok {
+		c.JSON(400, gin.H{"error": "invalid min_price"})
+		return
+	}
+	if f.MaxPrice, ok = parseOptionalPrice(c.Query("max_price")); !ok {
+		c.JSON(400, gin.H{"error": "invalid max_price"})
+		return
+	}
+
 	var err error
-
-	if minPriceStr != "" {
-		minPrice, err = strconv.ParseFloat(minPriceStr, 64)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid min_price"})
-			return
-		}
+	f.Limit, f.Offset, err = httpx.Pagination(c, defaultListingsLimit, maxListingsLimit)
+	if err != nil {
+		httpx.Error(c, err)
+		return
 	}
 
-	if maxPriceStr != "" {
-		maxPrice, err = strconv.ParseFloat(maxPriceStr, 64)
-		if err != nil {
-			c.JSON(400, gin.H{"error": "invalid max_price"})
-			return
-		}
-	}
-
-	ls, err := h.service.List(c.Request.Context(), category, minPrice, maxPrice)
+	ls, err := h.service.List(c.Request.Context(), f)
 	if err != nil {
 		httpx.Error(c, err)
 		return
@@ -102,12 +120,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		Title       string  `json:"title"`
-		Description string  `json:"description"`
-		Price       float64 `json:"price"`
-		Category    string  `json:"category"`
-	}
+	var req createUpdateRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": "Invalid request"})
