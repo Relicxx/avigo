@@ -4,31 +4,39 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
-
-	"github.com/Relicxx/avigo/internal/kafka"
-	"github.com/redis/go-redis/v9"
 )
+
+const listCacheTTL = 5 * time.Minute
+
+// Publisher публикует доменные события.
+type Publisher interface {
+	Publish(ctx context.Context, topic string, key, value []byte) error
+}
 
 type Service struct {
 	repo     Repository
-	producer *kafka.Producer
-	redis    *redis.Client
+	producer Publisher
+	cache    Cache
 }
 
-func NewService(repo Repository, producer *kafka.Producer, redis *redis.Client) *Service {
-	return &Service{repo: repo, producer: producer, redis: redis}
+func NewService(repo Repository, producer Publisher, cache Cache) *Service {
+	return &Service{repo: repo, producer: producer, cache: cache}
 }
 
 func (s *Service) Create(ctx context.Context, l *Listing) error {
 	if err := s.repo.Create(ctx, l); err != nil {
 		return err
 	}
-	s.producer.Publish(ctx, "listing.created",
+	s.cache.Invalidate(ctx)
+	if err := s.producer.Publish(ctx, "listing.created",
 		[]byte(fmt.Sprintf("%d", l.ID)),
 		[]byte(fmt.Sprintf(`{"id":%d,"user_id":%d}`, l.ID, l.UserID)),
-	)
+	); err != nil {
+		slog.Error("publish listing.created failed", "error", err, "listing_id", l.ID)
+	}
 	return nil
 }
 
@@ -44,13 +52,13 @@ func fmtPrice(p *float64) string {
 }
 
 func (s *Service) List(ctx context.Context, f Filter) ([]*Listing, error) {
-	cacheKey := fmt.Sprintf("listings:%s:%s:%s:%d:%d",
+	cacheKey := fmt.Sprintf("listings:v%d:%s:%s:%s:%d:%d",
+		s.cache.Version(ctx),
 		f.Category, fmtPrice(f.MinPrice), fmtPrice(f.MaxPrice), f.Limit, f.Offset)
 
-	cached, err := s.redis.Get(ctx, cacheKey).Result()
-	if err == nil {
+	if cached, ok := s.cache.Get(ctx, cacheKey); ok {
 		var listings []*Listing
-		if err := json.Unmarshal([]byte(cached), &listings); err == nil {
+		if err := json.Unmarshal(cached, &listings); err == nil {
 			return listings, nil
 		}
 	}
@@ -60,8 +68,9 @@ func (s *Service) List(ctx context.Context, f Filter) ([]*Listing, error) {
 		return nil, err
 	}
 
-	data, _ := json.Marshal(listings)
-	s.redis.Set(ctx, cacheKey, data, 5*time.Minute)
+	if data, err := json.Marshal(listings); err == nil {
+		s.cache.Set(ctx, cacheKey, data, listCacheTTL)
+	}
 
 	return listings, nil
 }
@@ -70,7 +79,7 @@ func (s *Service) Update(ctx context.Context, l *Listing) error {
 	if err := s.repo.Update(ctx, l); err != nil {
 		return err
 	}
-	s.invalidateListCache(ctx)
+	s.cache.Invalidate(ctx)
 	return nil
 }
 
@@ -78,16 +87,6 @@ func (s *Service) Delete(ctx context.Context, id, userID int64) error {
 	if err := s.repo.Delete(ctx, id, userID); err != nil {
 		return err
 	}
-	s.invalidateListCache(ctx)
+	s.cache.Invalidate(ctx)
 	return nil
-}
-
-// invalidateListCache сбрасывает закешированные листинги после изменения данных,
-// чтобы клиенты не получали устаревший cache-aside результат.
-func (s *Service) invalidateListCache(ctx context.Context) {
-	keys, err := s.redis.Keys(ctx, "listings:*").Result()
-	if err != nil || len(keys) == 0 {
-		return
-	}
-	s.redis.Del(ctx, keys...)
 }
