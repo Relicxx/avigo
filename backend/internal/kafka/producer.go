@@ -15,6 +15,10 @@ func NewProducer(brokers string) *Producer {
 		writer: &kafka.Writer{
 			Addr:     kafka.TCP(brokers),
 			Balancer: &kafka.LeastBytes{},
+			// Ждём подтверждения записи от всех in-sync реплик,
+			// чтобы не терять события молча.
+			RequiredAcks:           kafka.RequireAll,
+			AllowAutoTopicCreation: true,
 		},
 	}
 }

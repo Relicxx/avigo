@@ -2,6 +2,8 @@ package main
 
 import (
 	"log"
+	"log/slog"
+	"os"
 
 	"github.com/Relicxx/avigo/config"
 	"github.com/Relicxx/avigo/internal/auth"
@@ -16,6 +18,8 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
@@ -46,7 +50,10 @@ func main() {
 	boostService := boost.NewService(boostRepo, producer, cfg.BoostDuration)
 	boostHandler := boost.NewHandler(boostService)
 
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.Use(middleware.RequestID())
+	r.Use(middleware.Logger())
 	r.Use(middleware.BodyLimit(1 << 20)) // 1 MiB
 
 	r.POST("/auth/register", authHandler.Register)
