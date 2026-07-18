@@ -1,9 +1,15 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/Relicxx/avigo/config"
 	"github.com/Relicxx/avigo/internal/auth"
@@ -25,7 +31,10 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	pool, err := storage.NewPostgres(cfg)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := storage.NewPostgres(ctx, cfg)
 	if err != nil {
 		log.Fatalf("failed to connect to db: %v", err)
 	}
@@ -56,6 +65,10 @@ func main() {
 	r.Use(middleware.Logger())
 	r.Use(middleware.BodyLimit(1 << 20)) // 1 MiB
 
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
 	r.POST("/auth/register", authHandler.Register)
 	r.POST("/auth/login", authHandler.Login)
 	r.POST("/auth/refresh", authHandler.Refresh)
@@ -83,6 +96,27 @@ func main() {
 	messages.POST("/messages", chatHandler.Send)
 	messages.GET("/listings/:id/messages", chatHandler.GetByListing)
 
-	log.Printf("starting on port %s", cfg.AppPort)
-	r.Run(":" + cfg.AppPort)
+	srv := &http.Server{
+		Addr:              ":" + cfg.AppPort,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	go func() {
+		slog.Info("server starting", "port", cfg.AppPort)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("server failed", "error", err)
+			stop()
+		}
+	}()
+
+	<-ctx.Done()
+	slog.Info("shutting down")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("graceful shutdown failed", "error", err)
+	}
+	// defer pool.Close() и producer.Close() выполняются после выхода из main.
 }
