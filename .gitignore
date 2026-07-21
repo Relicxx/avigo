@@ -5,6 +5,7 @@ AGENTS.md
 # env
 .env
 .env.*
+!.env.example
 
 # binaries
 backend/bin/
