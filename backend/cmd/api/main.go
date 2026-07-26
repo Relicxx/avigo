@@ -15,12 +15,14 @@ import (
 	"github.com/Relicxx/avigo/internal/auth"
 	"github.com/Relicxx/avigo/internal/boost"
 	"github.com/Relicxx/avigo/internal/chat"
+	"github.com/Relicxx/avigo/internal/health"
 	"github.com/Relicxx/avigo/internal/kafka"
 	"github.com/Relicxx/avigo/internal/listing"
 	"github.com/Relicxx/avigo/internal/storage"
 	"github.com/Relicxx/avigo/internal/user"
 	"github.com/Relicxx/avigo/pkg/middleware"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -66,11 +68,20 @@ func main() {
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestID())
 	r.Use(middleware.Logger())
+	r.Use(middleware.Metrics())
 	r.Use(middleware.BodyLimit(1 << 20)) // 1 MiB
 
+	// Liveness: процесс жив. Readiness: зависимости отвечают.
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+	r.GET("/readyz", health.Readiness(2*time.Second,
+		health.Check{Name: "postgres", Probe: pool.Ping},
+		health.Check{Name: "redis", Probe: func(ctx context.Context) error {
+			return redisClient.Ping(ctx).Err()
+		}},
+	))
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	r.POST("/auth/register", authHandler.Register)
 	r.POST("/auth/login", authHandler.Login)
