@@ -4,11 +4,32 @@
 
 ## Стек
 
-- **API** — Gin, JWT (access + refresh), bcrypt
-- **БД** — PostgreSQL через pgxpool (пул с лимитами и таймаутами)
-- **Redis** — кэш списков объявлений (версионируемые ключи) и хранилище refresh-токенов
-- **Kafka** — события `listing.created`, `boost.created` (acks от всех ISR)
-- **Логи** — structured logging (slog, JSON) + request-id middleware
+- **API** — Gin, JWT (access + refresh), bcrypt, per-IP rate limiting на auth-роутах
+- **БД** — PostgreSQL через pgxpool (пул с лимитами и таймаутами, индексы под горячие запросы)
+- **Redis** — кэш списков объявлений (версионируемые ключи), refresh-токены, rate limit, счётчики аналитики
+- **Kafka** — события `listing.created`, `boost.created` (acks от всех ISR); воркер-консьюмер с at-least-once
+- **Наблюдаемость** — structured logging (slog, JSON), request-id, Prometheus-метрики, liveness/readiness probes
+
+## Архитектура
+
+```mermaid
+flowchart LR
+    client[Клиент] -->|HTTP + JWT| api[API<br/>Gin]
+    api --> pg[(PostgreSQL<br/>users, listings,<br/>boosts, messages)]
+    api --> redis[(Redis<br/>кэш, refresh-токены,<br/>rate limit)]
+    api -->|listing.created<br/>boost.created| kafka[[Kafka]]
+    kafka -->|consumer group<br/>avigo-analytics| worker[Analytics worker]
+    worker -->|суточные счётчики<br/>stats:*| redis
+```
+
+Два бинарника из одного модуля:
+
+- `cmd/api` — HTTP API;
+- `cmd/worker` — консьюмер Kafka: читает `listing.created` и `boost.created`
+  в consumer group `avigo-analytics` и ведёт суточные счётчики
+  `stats:<topic>:<YYYY-MM-DD>` в Redis (TTL 90 дней). Семантика at-least-once:
+  offset коммитится после обработки; битое событие логируется и пропускается,
+  чтобы не блокировать партицию. Останавливается gracefully по SIGTERM.
 
 ## Запуск
 
@@ -17,7 +38,8 @@ cp .env.example .env      # заполнить JWT_SECRET — без него п
 docker compose up --build
 ```
 
-API поднимется на `http://localhost:8080` (kafka-ui — на `http://localhost:8090`).
+API поднимется на `http://localhost:8080` (kafka-ui — на `http://localhost:8090`),
+воркер аналитики стартует отдельным контейнером.
 Миграции из `backend/migrations` применяются автоматически при первой инициализации Postgres.
 
 Локально без Docker:
@@ -50,7 +72,12 @@ Refresh-токены хранятся в Redis и **одноразовые**: `P
 
 `POST /auth/logout` с `{"refresh_token": "..."}` отзывает refresh-токен.
 
-Защищённые роуты требуют `Authorization: Bearer <access_token>`.
+Защищённые роуты требуют `Authorization: Bearer <access_token>` (схема `Bearer`
+обязательна, алгоритм подписи зафиксирован — HS256, токен без `exp` невалиден).
+
+Auth-эндпоинты ограничены по частоте: **10 запросов в минуту с одного IP**
+(фиксированное окно в Redis, превышение — `429` с заголовком `Retry-After`).
+При недоступности Redis лимитер работает fail-open и не роняет API.
 
 ## Маршруты
 
@@ -68,7 +95,9 @@ Refresh-токены хранятся в Redis и **одноразовые**: `P
 | POST   | `/listings/:id/boost`      | ✔    | Поднять своё объявление                    |
 | POST   | `/messages`                | ✔    | Отправить сообщение по объявлению          |
 | GET    | `/listings/:id/messages`   | ✔    | Своя переписка по объявлению               |
-| GET    | `/health`                  | —    | Healthcheck                                |
+| GET    | `/health`                  | —    | Liveness: процесс жив                      |
+| GET    | `/readyz`                  | —    | Readiness: Postgres и Redis отвечают       |
+| GET    | `/metrics`                 | —    | Метрики Prometheus                         |
 
 ### Лента объявлений
 
@@ -101,8 +130,19 @@ Refresh-токены хранятся в Redis и **одноразовые**: `P
 ## Ошибки
 
 Доменные ошибки единообразно маппятся на HTTP-коды: `404` (не найдено/чужое),
-`409` (конфликт: дубликат email, повторный буст), `403`, `401`, `400`.
-Внутренние ошибки логируются и отдаются как `500` без деталей.
+`409` (конфликт: дубликат email, повторный буст), `403`, `401`, `400`,
+`429` (превышен rate limit). Внутренние ошибки логируются и отдаются
+как `500` без деталей.
+
+## Наблюдаемость
+
+- `GET /metrics` — Prometheus: `http_requests_total` и
+  `http_request_duration_seconds` с лейблами `method`, `route`
+  (шаблон маршрута, а не конкретный id — кардинальность под контролем)
+  и `status`.
+- `GET /health` — liveness, `GET /readyz` — readiness (ping Postgres и Redis
+  с таймаутом; имена упавших зависимостей в ответе, детали — только в логах).
+- Все логи — JSON (slog) с `request_id`.
 
 ## Разработка
 
