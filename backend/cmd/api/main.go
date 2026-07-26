@@ -30,6 +30,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
+	if cfg.JWTSecret == "" {
+		log.Fatal("JWT_SECRET is not set: refusing to start without a signing secret")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

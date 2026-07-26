@@ -1,7 +1,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -27,10 +26,6 @@ func Load() (*Config, error) {
 		RedisAddr:    os.Getenv("REDIS_ADDR"),
 		KafkaBrokers: os.Getenv("KAFKA_BROKERS"),
 		JWTSecret:    os.Getenv("JWT_SECRET"),
-	}
-
-	if cfg.JWTSecret == "" {
-		return nil, errors.New("JWT_SECRET is not set: refusing to start without a signing secret")
 	}
 
 	if cfg.AppPort == "" {

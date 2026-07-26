@@ -19,6 +19,22 @@ services:
       kafka:
         condition: service_started
 
+  worker:
+    build: ./backend
+    container_name: avigo-worker
+    command: ["./worker"]
+    environment:
+      REDIS_ADDR: redis:6379
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    healthcheck:
+      # HTTP-healthcheck из Dockerfile неприменим: у воркера нет HTTP-порта.
+      disable: true
+
   postgres:
     image: postgres:16-alpine
     container_name: avigo-postgres
