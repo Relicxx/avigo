@@ -119,12 +119,14 @@ func (s *Service) Login(ctx context.Context, email, password string) (*Tokens, e
 // parseRefreshToken валидирует подпись и claims refresh-токена,
 // возвращая userID и jti.
 func (s *Service) parseRefreshToken(refreshToken string) (int64, string, error) {
-	token, err := jwt.Parse(refreshToken, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, ErrInvalidToken
-		}
-		return []byte(s.jwtSecret), nil
-	})
+	token, err := jwt.Parse(refreshToken,
+		func(t *jwt.Token) (interface{}, error) {
+			return []byte(s.jwtSecret), nil
+		},
+		// Явный allowlist алгоритмов и обязательный exp.
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithExpirationRequired(),
+	)
 	if err != nil || !token.Valid {
 		return 0, "", ErrInvalidToken
 	}

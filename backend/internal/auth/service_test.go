@@ -8,6 +8,7 @@ import (
 
 	"github.com/Relicxx/avigo/internal/apperr"
 	"github.com/Relicxx/avigo/internal/user"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type fakeUserRepo struct {
@@ -160,6 +161,28 @@ func TestRefreshRejectsForeignSecret(t *testing.T) {
 	_, err := s.Refresh(context.Background(), tokens.RefreshToken)
 	if !errors.Is(err, ErrInvalidToken) {
 		t.Fatalf("expected ErrInvalidToken for token signed with foreign secret, got %v", err)
+	}
+}
+
+func TestRefreshRejectsTokenWithoutExpiry(t *testing.T) {
+	s := newTestService()
+	ctx := context.Background()
+	tokens := registerAndLogin(t, s)
+
+	// Достаём jti валидного refresh-токена и собираем токен без exp:
+	// «вечный» refresh должен отклоняться, даже если jti существует.
+	uid, jti, err := s.parseRefreshToken(tokens.RefreshToken)
+	if err != nil {
+		t.Fatalf("parse refresh: %v", err)
+	}
+	claims := jwt.MapClaims{"user_id": float64(uid), "type": "refresh", "jti": jti}
+	eternal, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("test-secret"))
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+
+	if _, err := s.Refresh(ctx, eternal); !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("expected ErrInvalidToken for token without exp, got %v", err)
 	}
 }
 

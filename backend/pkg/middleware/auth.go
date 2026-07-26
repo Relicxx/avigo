@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -15,14 +14,22 @@ func Auth(jwtSecret string) gin.HandlerFunc {
 			c.AbortWithStatusJSON(401, gin.H{"error": "missing token"})
 			return
 		}
-		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+		// Схема обязательна: голый токен без "Bearer " не принимается.
+		scheme, tokenStr, found := strings.Cut(authHeader, " ")
+		if !found || scheme != "Bearer" || tokenStr == "" {
+			c.AbortWithStatusJSON(401, gin.H{"error": "invalid authorization header"})
+			return
+		}
 
-		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method")
-			}
-			return []byte(jwtSecret), nil
-		})
+		token, err := jwt.Parse(tokenStr,
+			func(t *jwt.Token) (interface{}, error) {
+				return []byte(jwtSecret), nil
+			},
+			// Явный allowlist алгоритмов вместо проверки семейства
+			// и обязательный exp: токен без срока действия невалиден.
+			jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+			jwt.WithExpirationRequired(),
+		)
 		if err != nil || !token.Valid {
 			c.AbortWithStatusJSON(401, gin.H{"error": "invalid token"})
 			return

@@ -94,6 +94,29 @@ func TestAuthExpiredToken(t *testing.T) {
 	}
 }
 
+func TestAuthRejectsMalformedAuthorizationHeader(t *testing.T) {
+	token := signHS256(t, testSecret, validClaims("access"))
+	for name, header := range map[string]string{
+		"no scheme":        token,
+		"wrong scheme":     "Basic " + token,
+		"lowercase bearer": "bearer " + token,
+		"empty token":      "Bearer ",
+	} {
+		if w := doRequest(authRouter(), header); w.Code != http.StatusUnauthorized {
+			t.Fatalf("%s: expected 401, got %d", name, w.Code)
+		}
+	}
+}
+
+func TestAuthRejectsTokenWithoutExpiry(t *testing.T) {
+	claims := validClaims("access")
+	delete(claims, "exp")
+	token := signHS256(t, testSecret, claims)
+	if w := doRequest(authRouter(), "Bearer "+token); w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for token without exp, got %d", w.Code)
+	}
+}
+
 func TestAuthValidToken(t *testing.T) {
 	token := signHS256(t, testSecret, validClaims("access"))
 	w := doRequest(authRouter(), "Bearer "+token)
