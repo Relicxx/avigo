@@ -83,10 +83,13 @@ func main() {
 	))
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	r.POST("/auth/register", authHandler.Register)
-	r.POST("/auth/login", authHandler.Login)
-	r.POST("/auth/refresh", authHandler.Refresh)
-	r.POST("/auth/logout", authHandler.Logout)
+	// Auth-эндпоинты ограничены по частоте: login/register делают дорогой
+	// bcrypt и являются мишенью перебора паролей.
+	authLimit := middleware.RateLimit(storage.NewRateLimitStore(redisClient), "auth", 10, time.Minute)
+	r.POST("/auth/register", authLimit, authHandler.Register)
+	r.POST("/auth/login", authLimit, authHandler.Login)
+	r.POST("/auth/refresh", authLimit, authHandler.Refresh)
+	r.POST("/auth/logout", authLimit, authHandler.Logout)
 
 	listings := r.Group("/listings")
 	listings.GET("", listingHandler.List)
