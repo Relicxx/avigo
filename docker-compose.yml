@@ -12,12 +12,29 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       BOOST_DURATION: ${BOOST_DURATION:-24h}
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       kafka:
         condition: service_started
+
+  # Одноразовый прогон миграций goose: применяет новые миграции
+  # и к уже существующей базе, а не только при первой инициализации.
+  migrate:
+    build:
+      context: ./backend
+      target: migrator
+    container_name: avigo-migrate
+    environment:
+      GOOSE_DRIVER: postgres
+      GOOSE_DBSTRING: postgres://avigo:avigo@postgres:5432/avigo?sslmode=disable
+      GOOSE_MIGRATION_DIR: /migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   worker:
     build: ./backend
@@ -46,7 +63,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U avigo -d avigo"]
       interval: 5s

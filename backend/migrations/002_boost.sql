@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE IF NOT EXISTS boosts (
     id SERIAL PRIMARY KEY,
     listing_id INTEGER NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
@@ -5,3 +6,6 @@ CREATE TABLE IF NOT EXISTS boosts (
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- +goose Down
+DROP TABLE IF EXISTS boosts;

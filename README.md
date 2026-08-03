@@ -40,7 +40,21 @@ docker compose up --build
 
 API поднимется на `http://localhost:8080` (kafka-ui — на `http://localhost:8090`),
 воркер аналитики стартует отдельным контейнером.
-Миграции из `backend/migrations` применяются автоматически при первой инициализации Postgres.
+
+### Миграции
+
+Миграции из `backend/migrations` — в формате [goose](https://github.com/pressly/goose)
+(`-- +goose Up` / `-- +goose Down`). Их применяет одноразовый compose-сервис
+`migrate` (стадия `migrator` в Dockerfile) при каждом `docker compose up`:
+новые миграции накатываются и на уже существующую базу, приложение стартует
+только после успешного прогона.
+
+Локально (goose установлен через `go install github.com/pressly/goose/v3/cmd/goose@latest`):
+
+```bash
+cd backend
+goose -dir migrations postgres "postgres://avigo:avigo@localhost:5432/avigo?sslmode=disable" up
+```
 
 Локально без Docker:
 
