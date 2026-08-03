@@ -11,8 +11,10 @@ import (
 
 // Filter — параметры выборки объявлений. Nil-цены означают отсутствие фильтра
 // (в отличие от «0 = нет фильтра», ноль — валидная цена).
+// Query — полнотекстовый поиск по title + description; пустая строка — без поиска.
 type Filter struct {
 	Category string
+	Query    string
 	MinPrice *float64
 	MaxPrice *float64
 	Limit    int
@@ -79,19 +81,23 @@ func (r *repo) GetByID(ctx context.Context, id int64) (*Listing, error) {
 }
 
 func (r *repo) List(ctx context.Context, f Filter) ([]*Listing, error) {
+	// Поиск идёт по generated-колонке search_tsv (GIN-индекс, конфигурация
+	// 'simple'). websearch_to_tsquery безопасно парсит пользовательский ввод:
+	// синтаксическая ошибка в запросе не роняет выборку.
 	query := `SELECT l.id, l.user_id, l.title, l.description, l.price, l.category, l.is_boosted, l.created_at
 	FROM listings l
 	WHERE ($1 = '' OR l.category = $1)
 		AND ($2::numeric IS NULL OR l.price >= $2)
 		AND ($3::numeric IS NULL OR l.price <= $3)
+		AND ($4 = '' OR l.search_tsv @@ websearch_to_tsquery('simple', $4))
 	ORDER BY (l.is_boosted AND EXISTS (
 			SELECT 1 FROM boosts b
 			WHERE b.listing_id = l.id AND b.expires_at > NOW()
 		)) DESC,
 		l.created_at DESC
-	LIMIT $4 OFFSET $5`
+	LIMIT $5 OFFSET $6`
 
-	rows, err := r.db.Query(ctx, query, f.Category, f.MinPrice, f.MaxPrice, f.Limit, f.Offset)
+	rows, err := r.db.Query(ctx, query, f.Category, f.MinPrice, f.MaxPrice, f.Query, f.Limit, f.Offset)
 	if err != nil {
 		return nil, fmt.Errorf("list listings: %w", err)
 	}

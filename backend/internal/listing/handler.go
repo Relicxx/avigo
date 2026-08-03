@@ -2,6 +2,7 @@ package listing
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/Relicxx/avigo/pkg/httpx"
 	"github.com/gin-gonic/gin"
@@ -69,6 +70,9 @@ func (h *Handler) GetByID(c *gin.Context) {
 const (
 	defaultListingsLimit = 20
 	maxListingsLimit     = 100
+	// maxSearchQueryLen ограничивает длину поисковой строки: этого достаточно
+	// для осмысленного запроса и защищает БД от гигантских tsquery.
+	maxSearchQueryLen = 100
 )
 
 // parseOptionalPrice различает «фильтр не задан» (nil) и «фильтр по 0».
@@ -84,7 +88,14 @@ func parseOptionalPrice(raw string) (*float64, bool) {
 }
 
 func (h *Handler) List(c *gin.Context) {
-	f := Filter{Category: c.Query("category")}
+	f := Filter{
+		Category: c.Query("category"),
+		Query:    strings.TrimSpace(c.Query("q")),
+	}
+	if len(f.Query) > maxSearchQueryLen {
+		c.JSON(400, gin.H{"error": "invalid q"})
+		return
+	}
 
 	var ok bool
 	if f.MinPrice, ok = parseOptionalPrice(c.Query("min_price")); !ok {

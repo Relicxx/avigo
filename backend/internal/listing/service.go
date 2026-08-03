@@ -52,9 +52,11 @@ func fmtPrice(p *float64) string {
 }
 
 func (s *Service) List(ctx context.Context, f Filter) ([]*Listing, error) {
-	cacheKey := fmt.Sprintf("listings:v%d:%s:%s:%s:%d:%d",
+	// Ключ включает все параметры выборки, в том числе поисковую строку q:
+	// иначе результаты разных запросов перепутались бы в кэше.
+	cacheKey := fmt.Sprintf("listings:v%d:%s:%s:%s:%d:%d:%s",
 		s.cache.Version(ctx),
-		f.Category, fmtPrice(f.MinPrice), fmtPrice(f.MaxPrice), f.Limit, f.Offset)
+		f.Category, fmtPrice(f.MinPrice), fmtPrice(f.MaxPrice), f.Limit, f.Offset, f.Query)
 
 	if cached, ok := s.cache.Get(ctx, cacheKey); ok {
 		var listings []*Listing

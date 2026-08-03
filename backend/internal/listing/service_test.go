@@ -10,11 +10,12 @@ import (
 )
 
 type mockRepo struct {
-	createErr error
-	updateErr error
-	deleteErr error
-	listed    []*Listing
-	listCalls int
+	createErr  error
+	updateErr  error
+	deleteErr  error
+	listed     []*Listing
+	listCalls  int
+	lastFilter Filter
 }
 
 func (m *mockRepo) Create(_ context.Context, l *Listing) error {
@@ -29,8 +30,9 @@ func (m *mockRepo) GetByID(_ context.Context, _ int64) (*Listing, error) {
 	return nil, apperr.ErrNotFound
 }
 
-func (m *mockRepo) List(_ context.Context, _ Filter) ([]*Listing, error) {
+func (m *mockRepo) List(_ context.Context, f Filter) ([]*Listing, error) {
 	m.listCalls++
+	m.lastFilter = f
 	return m.listed, nil
 }
 
@@ -131,5 +133,42 @@ func TestListCachesResult(t *testing.T) {
 	}
 	if len(first) != 1 || len(second) != 1 || second[0].Title != "cached" {
 		t.Fatalf("unexpected results: %v / %v", first, second)
+	}
+}
+
+func TestListPassesSearchQueryToRepo(t *testing.T) {
+	repo := &mockRepo{}
+	s := NewService(repo, &stubPublisher{}, newStubCache())
+
+	if _, err := s.List(context.Background(), Filter{Limit: 20, Query: "iphone 13"}); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if repo.lastFilter.Query != "iphone 13" {
+		t.Fatalf("expected query to reach repo, got %q", repo.lastFilter.Query)
+	}
+}
+
+func TestListCacheKeyIncludesSearchQuery(t *testing.T) {
+	repo := &mockRepo{listed: []*Listing{{ID: 1}}}
+	s := NewService(repo, &stubPublisher{}, newStubCache())
+	ctx := context.Background()
+
+	// Разные q не должны попадать в один кэш-ключ.
+	if _, err := s.List(ctx, Filter{Limit: 20, Query: "iphone"}); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if _, err := s.List(ctx, Filter{Limit: 20, Query: "macbook"}); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if repo.listCalls != 2 {
+		t.Fatalf("expected 2 repo calls for different queries, got %d", repo.listCalls)
+	}
+
+	// Повтор того же q обслуживается из кэша.
+	if _, err := s.List(ctx, Filter{Limit: 20, Query: "iphone"}); err != nil {
+		t.Fatalf("list from cache: %v", err)
+	}
+	if repo.listCalls != 2 {
+		t.Fatalf("expected repeated query to hit cache, got %d repo calls", repo.listCalls)
 	}
 }
