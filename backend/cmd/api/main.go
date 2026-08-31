@@ -18,6 +18,7 @@ import (
 	"github.com/Relicxx/avigo/internal/health"
 	"github.com/Relicxx/avigo/internal/kafka"
 	"github.com/Relicxx/avigo/internal/listing"
+	"github.com/Relicxx/avigo/internal/outbox"
 	"github.com/Relicxx/avigo/internal/storage"
 	"github.com/Relicxx/avigo/internal/user"
 	"github.com/Relicxx/avigo/pkg/middleware"
@@ -57,12 +58,17 @@ func main() {
 
 	listingRepo := listing.NewRepository(pool)
 	listingCache := listing.NewRedisCache(redisClient)
-	listingService := listing.NewService(listingRepo, producer, listingCache)
+	listingService := listing.NewService(listingRepo, listingCache)
 	listingHandler := listing.NewHandler(listingService)
 
 	boostRepo := boost.NewRepository(pool)
-	boostService := boost.NewService(boostRepo, producer, cfg.BoostDuration)
+	boostService := boost.NewService(boostRepo, cfg.BoostDuration)
 	boostHandler := boost.NewHandler(boostService)
+
+	// Доменные события пишутся в outbox в одной транзакции с данными;
+	// relay доносит их до Kafka (at-least-once).
+	relay := outbox.NewRelay(outbox.NewPgStore(pool), producer, time.Second, 100)
+	go relay.Run(ctx)
 
 	r := gin.New()
 	r.Use(gin.Recovery())

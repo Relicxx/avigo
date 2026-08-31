@@ -40,15 +40,6 @@ func (m *mockRepo) Update(_ context.Context, _ *Listing) error { return m.update
 
 func (m *mockRepo) Delete(_ context.Context, _, _ int64) error { return m.deleteErr }
 
-type stubPublisher struct {
-	topics []string
-}
-
-func (p *stubPublisher) Publish(_ context.Context, topic string, _, _ []byte) error {
-	p.topics = append(p.topics, topic)
-	return nil
-}
-
 type stubCache struct {
 	store         map[string][]byte
 	invalidations int
@@ -72,7 +63,7 @@ func (c *stubCache) Invalidate(_ context.Context) { c.invalidations++ }
 func TestUpdateForeignListingReturnsNotFound(t *testing.T) {
 	repo := &mockRepo{updateErr: apperr.ErrNotFound}
 	cache := newStubCache()
-	s := NewService(repo, &stubPublisher{}, cache)
+	s := NewService(repo, cache)
 
 	err := s.Update(context.Background(), &Listing{ID: 1, UserID: 99})
 	if !errors.Is(err, apperr.ErrNotFound) {
@@ -86,7 +77,7 @@ func TestUpdateForeignListingReturnsNotFound(t *testing.T) {
 func TestDeleteForeignListingReturnsNotFound(t *testing.T) {
 	repo := &mockRepo{deleteErr: apperr.ErrNotFound}
 	cache := newStubCache()
-	s := NewService(repo, &stubPublisher{}, cache)
+	s := NewService(repo, cache)
 
 	err := s.Delete(context.Background(), 1, 99)
 	if !errors.Is(err, apperr.ErrNotFound) {
@@ -97,11 +88,10 @@ func TestDeleteForeignListingReturnsNotFound(t *testing.T) {
 	}
 }
 
-func TestCreatePublishesAndInvalidatesCache(t *testing.T) {
+func TestCreateInvalidatesCache(t *testing.T) {
 	repo := &mockRepo{}
-	pub := &stubPublisher{}
 	cache := newStubCache()
-	s := NewService(repo, pub, cache)
+	s := NewService(repo, cache)
 
 	if err := s.Create(context.Background(), &Listing{UserID: 1, Title: "test"}); err != nil {
 		t.Fatalf("create: %v", err)
@@ -109,15 +99,12 @@ func TestCreatePublishesAndInvalidatesCache(t *testing.T) {
 	if cache.invalidations != 1 {
 		t.Fatalf("expected 1 cache invalidation, got %d", cache.invalidations)
 	}
-	if len(pub.topics) != 1 || pub.topics[0] != "listing.created" {
-		t.Fatalf("expected listing.created event, got %v", pub.topics)
-	}
 }
 
 func TestListCachesResult(t *testing.T) {
 	repo := &mockRepo{listed: []*Listing{{ID: 1, Title: "cached"}}}
 	cache := newStubCache()
-	s := NewService(repo, &stubPublisher{}, cache)
+	s := NewService(repo, cache)
 	ctx := context.Background()
 
 	first, err := s.List(ctx, Filter{Limit: 20})
@@ -138,7 +125,7 @@ func TestListCachesResult(t *testing.T) {
 
 func TestListPassesSearchQueryToRepo(t *testing.T) {
 	repo := &mockRepo{}
-	s := NewService(repo, &stubPublisher{}, newStubCache())
+	s := NewService(repo, newStubCache())
 
 	if _, err := s.List(context.Background(), Filter{Limit: 20, Query: "iphone 13"}); err != nil {
 		t.Fatalf("list: %v", err)
@@ -150,7 +137,7 @@ func TestListPassesSearchQueryToRepo(t *testing.T) {
 
 func TestListCacheKeyIncludesSearchQuery(t *testing.T) {
 	repo := &mockRepo{listed: []*Listing{{ID: 1}}}
-	s := NewService(repo, &stubPublisher{}, newStubCache())
+	s := NewService(repo, newStubCache())
 	ctx := context.Background()
 
 	// Разные q не должны попадать в один кэш-ключ.

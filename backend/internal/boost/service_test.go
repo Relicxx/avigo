@@ -33,16 +33,9 @@ func (f *fakeBoostRepo) ListingOwner(_ context.Context, listingID int64) (int64,
 	return owner, nil
 }
 
-type stubPublisher struct{ topics []string }
-
-func (p *stubPublisher) Publish(_ context.Context, topic string, _, _ []byte) error {
-	p.topics = append(p.topics, topic)
-	return nil
-}
-
 func TestBoostForeignListingForbidden(t *testing.T) {
 	repo := &fakeBoostRepo{owners: map[int64]int64{10: 2}}
-	s := NewService(repo, &stubPublisher{}, time.Hour)
+	s := NewService(repo, time.Hour)
 
 	_, err := s.Boost(context.Background(), 10, 1)
 	if !errors.Is(err, ErrNotOwner) {
@@ -58,7 +51,7 @@ func TestBoostForeignListingForbidden(t *testing.T) {
 
 func TestBoostMissingListingNotFound(t *testing.T) {
 	repo := &fakeBoostRepo{owners: map[int64]int64{}}
-	s := NewService(repo, &stubPublisher{}, time.Hour)
+	s := NewService(repo, time.Hour)
 
 	_, err := s.Boost(context.Background(), 404, 1)
 	if !errors.Is(err, apperr.ErrNotFound) {
@@ -68,7 +61,7 @@ func TestBoostMissingListingNotFound(t *testing.T) {
 
 func TestBoostAlreadyBoostedConflict(t *testing.T) {
 	repo := &fakeBoostRepo{owners: map[int64]int64{10: 1}, createErr: ErrAlreadyBoosted}
-	s := NewService(repo, &stubPublisher{}, time.Hour)
+	s := NewService(repo, time.Hour)
 
 	_, err := s.Boost(context.Background(), 10, 1)
 	if !errors.Is(err, ErrAlreadyBoosted) {
@@ -81,9 +74,8 @@ func TestBoostAlreadyBoostedConflict(t *testing.T) {
 
 func TestBoostOwnListingUsesConfiguredDuration(t *testing.T) {
 	repo := &fakeBoostRepo{owners: map[int64]int64{10: 1}}
-	pub := &stubPublisher{}
 	duration := 2 * time.Hour
-	s := NewService(repo, pub, duration)
+	s := NewService(repo, duration)
 
 	before := time.Now()
 	b, err := s.Boost(context.Background(), 10, 1)
@@ -94,8 +86,5 @@ func TestBoostOwnListingUsesConfiguredDuration(t *testing.T) {
 	want := before.Add(duration)
 	if b.ExpiresAt.Before(want.Add(-time.Minute)) || b.ExpiresAt.After(want.Add(time.Minute)) {
 		t.Fatalf("expires_at %v not within expected window around %v", b.ExpiresAt, want)
-	}
-	if len(pub.topics) != 1 || pub.topics[0] != "boost.created" {
-		t.Fatalf("expected boost.created event, got %v", pub.topics)
 	}
 }

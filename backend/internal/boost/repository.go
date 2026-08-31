@@ -3,7 +3,9 @@ package boost
 import (
 	"context"
 	"fmt"
+	"strconv"
 
+	"github.com/Relicxx/avigo/internal/outbox"
 	"github.com/Relicxx/avigo/internal/storage"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -61,6 +63,15 @@ func (r *repo) CreateActive(ctx context.Context, b *Boost) error {
 		b.ListingID,
 	); err != nil {
 		return fmt.Errorf("mark listing boosted: %w", err)
+	}
+
+	// Событие boost.created уходит в outbox той же транзакцией:
+	// доставку в Kafka выполняет relay.
+	if err := outbox.Enqueue(ctx, tx, "boost.created",
+		strconv.FormatInt(b.ID, 10),
+		[]byte(fmt.Sprintf(`{"id":%d,"listing_id":%d,"user_id":%d}`, b.ID, b.ListingID, b.UserID)),
+	); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(ctx); err != nil {

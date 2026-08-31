@@ -4,39 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"time"
 )
 
 const listCacheTTL = 5 * time.Minute
 
-// Publisher публикует доменные события.
-type Publisher interface {
-	Publish(ctx context.Context, topic string, key, value []byte) error
-}
-
 type Service struct {
-	repo     Repository
-	producer Publisher
-	cache    Cache
+	repo  Repository
+	cache Cache
 }
 
-func NewService(repo Repository, producer Publisher, cache Cache) *Service {
-	return &Service{repo: repo, producer: producer, cache: cache}
+func NewService(repo Repository, cache Cache) *Service {
+	return &Service{repo: repo, cache: cache}
 }
 
+// Create создаёт объявление; событие listing.created репозиторий пишет
+// в outbox в той же транзакции, доставку в Kafka выполняет relay.
 func (s *Service) Create(ctx context.Context, l *Listing) error {
 	if err := s.repo.Create(ctx, l); err != nil {
 		return err
 	}
 	s.cache.Invalidate(ctx)
-	if err := s.producer.Publish(ctx, "listing.created",
-		[]byte(fmt.Sprintf("%d", l.ID)),
-		[]byte(fmt.Sprintf(`{"id":%d,"user_id":%d}`, l.ID, l.UserID)),
-	); err != nil {
-		slog.Error("publish listing.created failed", "error", err, "listing_id", l.ID)
-	}
 	return nil
 }
 

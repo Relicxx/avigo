@@ -3,8 +3,10 @@ package listing
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/Relicxx/avigo/internal/apperr"
+	"github.com/Relicxx/avigo/internal/outbox"
 	"github.com/Relicxx/avigo/internal/storage"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -37,12 +39,20 @@ func NewRepository(db *pgxpool.Pool) Repository {
 	return &repo{db: db}
 }
 
+// Create вставляет объявление и событие listing.created в outbox
+// в одной транзакции: событие не потеряется при недоступности Kafka.
 func (r *repo) Create(ctx context.Context, l *Listing) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin create listing tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback после commit — no-op
+
 	query := `INSERT INTO listings (user_id, title, description, price, category)
 	VALUES ($1, $2, $3, $4, $5)
 	RETURNING id, is_boosted, created_at`
 
-	err := r.db.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		query,
 		l.UserID,
 		l.Title,
@@ -51,6 +61,17 @@ func (r *repo) Create(ctx context.Context, l *Listing) error {
 		l.Category).Scan(&l.ID, &l.IsBoosted, &l.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create listing: %w", err)
+	}
+
+	if err := outbox.Enqueue(ctx, tx, "listing.created",
+		strconv.FormatInt(l.ID, 10),
+		[]byte(fmt.Sprintf(`{"id":%d,"user_id":%d}`, l.ID, l.UserID)),
+	); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit create listing tx: %w", err)
 	}
 
 	return nil
