@@ -8,7 +8,7 @@
 - **БД** — PostgreSQL через pgxpool (пул с лимитами и таймаутами, индексы под горячие запросы)
 - **Redis** — кэш списков объявлений (версионируемые ключи), refresh-токены, rate limit, счётчики аналитики
 - **Kafka** — события `listing.created`, `boost.created` (acks от всех ISR); воркер-консьюмер с at-least-once
-- **Наблюдаемость** — structured logging (slog, JSON), request-id, Prometheus-метрики, liveness/readiness probes
+- **Наблюдаемость** — structured logging (slog, JSON), request-id, liveness/readiness probes
 
 ## Архитектура
 
@@ -111,7 +111,6 @@ Auth-эндпоинты ограничены по частоте: **10 запр�
 | GET    | `/listings/:id/messages`   | ✔    | Своя переписка по объявлению               |
 | GET    | `/health`                  | —    | Liveness: процесс жив                      |
 | GET    | `/readyz`                  | —    | Readiness: Postgres и Redis отвечают       |
-| GET    | `/metrics`                 | —    | Метрики Prometheus                         |
 
 ### Лента объявлений
 
@@ -155,10 +154,6 @@ Auth-эндпоинты ограничены по частоте: **10 запр�
 
 ## Наблюдаемость
 
-- `GET /metrics` — Prometheus: `http_requests_total` и
-  `http_request_duration_seconds` с лейблами `method`, `route`
-  (шаблон маршрута, а не конкретный id — кардинальность под контролем)
-  и `status`.
 - `GET /health` — liveness, `GET /readyz` — readiness (ping Postgres и Redis
   с таймаутом; имена упавших зависимостей в ответе, детали — только в логах).
 - Все логи — JSON (slog) с `request_id`.
@@ -173,5 +168,3 @@ make test-race  # go test -race -cover ./...
 make vet        # go vet ./...
 make lint       # golangci-lint run
 ```
-
-CI (GitHub Actions) прогоняет build, vet, gofmt и тесты с `-race` на каждый push/PR.

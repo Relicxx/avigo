@@ -23,7 +23,6 @@ import (
 	"github.com/Relicxx/avigo/internal/user"
 	"github.com/Relicxx/avigo/pkg/middleware"
 	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -74,7 +73,6 @@ func main() {
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestID())
 	r.Use(middleware.Logger())
-	r.Use(middleware.Metrics())
 	r.Use(middleware.BodyLimit(1 << 20)) // 1 MiB
 
 	// Liveness: процесс жив. Readiness: зависимости отвечают.
@@ -87,7 +85,6 @@ func main() {
 			return redisClient.Ping(ctx).Err()
 		}},
 	))
-	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// Auth-эндпоинты ограничены по частоте: login/register делают дорогой
 	// bcrypt и являются мишенью перебора паролей.
